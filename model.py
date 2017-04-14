@@ -15,27 +15,69 @@ import os
 import csv
 
 
-# Read driving_log.csv file
+# Read driving data
+# Catalogs with driving data:
+drive_data_02 = 'drive-data-2'
+drive_data_03 = 'drive-data-3'
+#drive_data_04 = 'drive-data-track-2'
+# Log:
+driving_log = '/driving_log.csv'
+
+datasets = [drive_data_02, drive_data_03]
+
+print('Loading datasets...')
 samples = []
-with open('drive-data-2/driving_log.csv') as csvfile:
-    reader = csv.reader(csvfile)
-    for line in reader:
-        samples.append(line)
+for dataset in datasets:
+    ds = []
+    with open(dataset + driving_log) as csvfile:
+        reader = csv.reader(csvfile)
+        for line in reader:
+            ds.append(line)
+        print('Dataset: {0} ({1} records)'.format(dataset, len(ds)))
+        samples.extend(ds)
+print('Loading completed ({0} records from {1} datasets)'.format(len(samples), len(datasets)))
+
 
 # Split data
 from sklearn.model_selection import train_test_split
 # Split off 20% of the data to use for a test set.
-train_samples, validation_samples = train_test_split(samples, test_size = 0.2)
+train_samples, validation_samples = train_test_split(samples, test_size = 0.25)
+print('Training records (no augmentation): {0}'.format(len(train_samples)))
+print('Validation records (no augmentation): {0}'.format(len(validation_samples)))
 
 
 import cv2
 import numpy as np
 import sklearn
+import matplotlib.pyplot as plt
+#%matplotlib inline
+
+
+# Update path to an image
+def update_img_path(path):
+    upd_path = path.split('/')[-3] + '/' + \
+               path.split('/')[-2] + '/' + \
+               path.split('/')[-1]
+    return upd_path
+
+
+# Plot row (1x3) of images with titles
+def plot_row_3(pics, titles):
+    plt.figure(figsize=(12, 6))
+    for i in range(0, 3):
+        plt.subplot(1, 3, i + 1)
+        plt.title(titles[i], wrap=True)
+        plt.imshow(pics[i])
+    plt.tight_layout()
+    plt.show()
 
 
 def generator(samples, batch_size = 32):
     num_samples = len(samples)
+    
     # Loop forever so the generator never terminates:
+    show_plot = False
+    
     while 1:
         sklearn.utils.shuffle(samples)
         for offset in range(0, num_samples, batch_size):
@@ -48,30 +90,40 @@ def generator(samples, batch_size = 32):
                 angle_center = float(batch_sample[3])
 
                 # Create adjusted steering measurements for the side camera images
-                # Parameter to tune:
-                correction = 0.2
+                correction = 0.2                         # parameter to tune:
                 angle_left = angle_center + correction
                 angle_right = angle_center - correction
 
                 # Read in images from center, left and right cameras
                 path_center, path_left, path_right = batch_sample[0], batch_sample[1], batch_sample[2]
+                
                 # Update path to an images
-                path_center = 'drive-data-2/IMG/' + path_center.split('/')[-1]
-                path_left   = 'drive-data-2/IMG/' + path_left.split('/')[-1]
-                path_right  = 'drive-data-2/IMG/' + path_right.split('/')[-1]
-
+                path_center = update_img_path(path_center)
+                path_left   = update_img_path(path_left)
+                path_right  = update_img_path(path_right)
+                
                 # Use OpenCV to load an images
-                img_center = cv2.imread(path_center)
-                img_left   = cv2.imread(path_left)
-                img_right  = cv2.imread(path_right)
+                img_center = cv2.cvtColor(cv2.imread(path_center), cv2.COLOR_BGR2RGB)
+                img_left   = cv2.cvtColor(cv2.imread(path_left), cv2.COLOR_BGR2RGB)
+                img_right  = cv2.cvtColor( cv2.imread(path_right), cv2.COLOR_BGR2RGB)
+               
+                # Plot example of input and augmented images
+                if show_plot:
+                    pics = [img_center, img_left, img_right]
+                    titles = ['Center camera (ang = {0})'.format(angle_center), 
+                              'Left camera (ang = {0})'.format(angle_left), 
+                              'Right camera (ang = {0})'.format(angle_right)]
+                    plot_row_3(pics, titles)
+                    pics = [np.fliplr(img_center), np.fliplr(img_left), np.fliplr(img_right)]
+                    titles = ['Center camera (ang = {0})'.format(-angle_center), 
+                              'Left camera (ang = {0})'.format(-angle_left), 
+                              'Right camera (ang = {0})'.format(-angle_right)]
+                    plot_row_3(pics, titles)
+                    show_plot = False
 
                 # Add Images and Angles to dataset
                 images.extend([img_center, img_left, img_right])
                 angles.extend([angle_center, angle_left, angle_right])
-                #images.append(img_left)
-                #angles.append(angle_left)
-                #images.append(img_right)
-                #angles.append(angle_right)
 
             # Data augmentation
             aug_images, aug_angles = [], []
@@ -79,18 +131,14 @@ def generator(samples, batch_size = 32):
                 aug_images.append(image)
                 aug_angles.append(angle)
                 # Flipping Images (horizontally) and invert Steering Angles
-                #aug_images.append(cv2.flip(image, 1))
                 aug_images.append(np.fliplr(image))
-                aug_angles.append(angle * -1.0)
+                aug_angles.append(-angle)
 
-            # TODO: Trim image to only see section with road
             # Convert Images and Steering measurements to NumPy arrays
-            # (the format Keras requires)
-            
+            # (the format Keras requires) 
             X_train = np.array(aug_images)
             y_train = np.array(aug_angles)
-            #X_train = np.array(images)
-            #y_train = np.array(angles)
+
             yield sklearn.utils.shuffle(X_train, y_train)
 
 
@@ -134,13 +182,8 @@ model.fit_generator(
     samples_per_epoch = len(train_samples) * 6, 
     validation_data   = validation_generator,
     nb_val_samples    = len(validation_samples) * 6, 
-    nb_epoch          = 3)
+    nb_epoch          = 5)
 
-#model.fit(X_train, y_train,
-#    batch_size = 128,
-#	validation_split = 0.2,
-#	shuffle = True,
-#	nb_epoch = 5)
 
 # Save the train model
 model.save('model.h5')
