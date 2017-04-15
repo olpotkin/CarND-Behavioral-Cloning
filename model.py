@@ -1,16 +1,3 @@
-# Step 1 (Hello world):
-# - Take in an image from the center camera of the car. This is the input to neural network.
-# - Output a new steering angle for the car.
-# Step 2 (Preprocessing):
-# - Normalizing the data (Add a Lambda layer to the model)
-# - Mean centering the data
-# Step 3 (Data augmentation):
-# Problem: The car seems to pull too hard to the left
-# - Flipping Images (horizontally) and Invert Steering Angles
-# Step 4 (Using multiple cameras)
-# Step 5 (Using Generators to prevent MemoryError)
-#
-
 import os
 import csv
 
@@ -19,7 +6,6 @@ import csv
 # Catalogs with driving data:
 drive_data_02 = 'drive-data-2'
 drive_data_03 = 'drive-data-3'
-#drive_data_04 = 'drive-data-track-2'
 # Log:
 driving_log = '/driving_log.csv'
 
@@ -41,7 +27,7 @@ print('Loading completed ({0} records from {1} datasets)'.format(len(samples), l
 # Split data
 from sklearn.model_selection import train_test_split
 # Split off 20% of the data to use for a test set.
-train_samples, validation_samples = train_test_split(samples, test_size = 0.25)
+train_samples, validation_samples = train_test_split(samples, test_size = 0.2)
 print('Training records (no augmentation): {0}'.format(len(train_samples)))
 print('Validation records (no augmentation): {0}'.format(len(validation_samples)))
 
@@ -61,6 +47,28 @@ def update_img_path(path):
     return upd_path
 
 
+# Crop the image (for plotting)
+def img_crop(image):
+    height = image.shape[0]
+    width = image.shape[1]
+    # Crop 70px from the Top
+    # Crop 25px from the Bottom
+    image = image[70:height-25, 0:width]
+    return image
+
+
+# Data augmentation - add flipped images and inverted angles to dataset
+def flipping_augmentation(images, angles):
+    aug_images, aug_angles = [], []
+    for image, angle in zip(images, angles):
+        aug_images.append(image)
+        aug_angles.append(angle)
+        # Flipping Images (horizontally) and inverting Steering Angles
+        aug_images.append(np.fliplr(image))
+        aug_angles.append(angle * -1.0)
+    return aug_images, aug_angles
+
+
 # Plot row (1x3) of images with titles
 def plot_row_3(pics, titles):
     plt.figure(figsize=(12, 6))
@@ -72,10 +80,30 @@ def plot_row_3(pics, titles):
     plt.show()
 
 
+# Plot images for report
+def plot_imgs(img_center, img_left, img_right, angles):
+    pics = [img_left, img_center, img_right]
+    titles = ['Left camera (ang = {0:.2f})'.format(angles[1]),
+              'Center camera (ang = {0:.2f})'.format(angles[0]), 
+              'Right camera (ang = {0:.2f})'.format(angles[2])]
+    plot_row_3(pics, titles)
+    pics = [np.fliplr(img_left), np.fliplr(img_center), np.fliplr(img_right)]
+    titles = ['Left camera (flip, ang = {0:.2f})'.format(angles[1] * -1.0), 
+              'Center camera (flip, ang = {0:.2f})'.format(angles[0] * -1.0), 
+              'Right camera (flip, ang = {0:.2f})'.format(angles[2] * -1.0)]
+    plot_row_3(pics, titles)
+    pics = [img_crop(img_left), img_crop(img_center), img_crop(img_right)]
+    titles = ['Left camera (crop)', 'Center camera (crop)', 'Right camera (crop)']
+    plot_row_3(pics, titles)
+    pics = [np.fliplr(img_crop(img_left)), np.fliplr(img_crop(img_center)), np.fliplr(img_crop(img_right))]
+    titles = ['Left camera (flip, crop)', 'Center camera (flip, crop)', 'Right camera (flip, crop)']
+    plot_row_3(pics, titles)
+
+
 def generator(samples, batch_size = 32):
     num_samples = len(samples)
     
-    # Loop forever so the generator never terminates:
+    # Loop forever so the generator never terminates (set TRUE to plot images):
     show_plot = False
     
     while 1:
@@ -90,7 +118,7 @@ def generator(samples, batch_size = 32):
                 angle_center = float(batch_sample[3])
 
                 # Create adjusted steering measurements for the side camera images
-                correction = 0.2                         # parameter to tune:
+                correction = 0.2                         # parameter to tune
                 angle_left = angle_center + correction
                 angle_right = angle_center - correction
 
@@ -106,36 +134,22 @@ def generator(samples, batch_size = 32):
                 img_center = cv2.cvtColor(cv2.imread(path_center), cv2.COLOR_BGR2RGB)
                 img_left   = cv2.cvtColor(cv2.imread(path_left), cv2.COLOR_BGR2RGB)
                 img_right  = cv2.cvtColor( cv2.imread(path_right), cv2.COLOR_BGR2RGB)
-               
+                
                 # Plot example of input and augmented images
                 if show_plot:
-                    pics = [img_center, img_left, img_right]
-                    titles = ['Center camera (ang = {0})'.format(angle_center), 
-                              'Left camera (ang = {0})'.format(angle_left), 
-                              'Right camera (ang = {0})'.format(angle_right)]
-                    plot_row_3(pics, titles)
-                    pics = [np.fliplr(img_center), np.fliplr(img_left), np.fliplr(img_right)]
-                    titles = ['Center camera (ang = {0})'.format(-angle_center), 
-                              'Left camera (ang = {0})'.format(-angle_left), 
-                              'Right camera (ang = {0})'.format(-angle_right)]
-                    plot_row_3(pics, titles)
+                    angles = [angle_center, angle_left, angle_right]
+                    plot_imgs(img_center, img_left, img_right, angles)
                     show_plot = False
 
                 # Add Images and Angles to dataset
                 images.extend([img_center, img_left, img_right])
                 angles.extend([angle_center, angle_left, angle_right])
 
-            # Data augmentation
-            aug_images, aug_angles = [], []
-            for image, angle in zip(images, angles):
-                aug_images.append(image)
-                aug_angles.append(angle)
-                # Flipping Images (horizontally) and invert Steering Angles
-                aug_images.append(np.fliplr(image))
-                aug_angles.append(-angle)
+            # Data augmentation (flipping Images (horizontally) and inverting Steering Angles)
+            aug_images, aug_angles = flipping_augmentation(images, angles)
 
             # Convert Images and Steering measurements to NumPy arrays
-            # (the format Keras requires) 
+            # (the format Keras requires)
             X_train = np.array(aug_images)
             y_train = np.array(aug_angles)
 
@@ -145,7 +159,7 @@ def generator(samples, batch_size = 32):
 # Build the basic neural network to verify that everything is working
 # Flattened image connected to a single output node. This single output
 # node will predict steering angle, which makes this a regression network.
-from keras.models import Sequential
+from keras.models import Sequential, Model
 from keras.layers import Flatten, Dense, Lambda, Dropout, Cropping2D
 from keras.layers.convolutional import Convolution2D
 from keras.layers.pooling import MaxPooling2D
@@ -154,35 +168,55 @@ from keras.layers.pooling import MaxPooling2D
 train_generator = generator(train_samples, batch_size = 32)
 validation_generator = generator(validation_samples, batch_size = 32)
 
-model = Sequential()
-# pixel_normalized = pixel / 255
-# pixel_mean_centered = pixel_normalized - 0.5
-model.add(Lambda(lambda x: x / 255.0 - 0.5, input_shape = (160, 320, 3)))
-model.add(Cropping2D(cropping=((70, 25), (0, 0))))
-model.add(Convolution2D(24, 5, 5, subsample = (2, 2), activation = "relu"))
-model.add(Convolution2D(36, 5, 5, subsample = (2, 2), activation = "relu"))
-model.add(Convolution2D(48, 5, 5, subsample = (2, 2), activation = "relu"))
-model.add(Convolution2D(64, 3, 3, activation = "relu"))
-model.add(Convolution2D(64, 3, 3, activation = "relu"))
-#model.add(MaxPooling2D())
-#model.add(Convolution2D(6, 5, 5, activation = "relu"))
-#model.add(MaxPooling2D())
-model.add(Flatten())
-model.add(Dense(1164))
-model.add(Dense(100))
-model.add(Dense(50))
-model.add(Dense(10))
-model.add(Dense(1))
+
+# CNN architecture from Nvidia
+# https://github.com/0bserver07/Nvidia-Autopilot-Keras
+def nvidia_cnn():
+    model = Sequential()
+    # pixel_normalized = pixel / 255
+    # pixel_mean_centered = pixel_normalized - 0.5
+    model.add(Lambda(lambda x: x / 255.0 - 0.5, input_shape = (160, 320, 3)))
+    model.add(Cropping2D(cropping=((70, 25), (0, 0))))
+    model.add(Convolution2D(24, 5, 5, border_mode='valid', activation = "relu", subsample = (2, 2)))
+    model.add(Convolution2D(36, 5, 5, border_mode='valid', activation = "relu", subsample = (2, 2)))
+    model.add(Convolution2D(48, 5, 5, border_mode='valid', activation = "relu", subsample = (2, 2)))
+    model.add(Convolution2D(64, 3, 3, border_mode='valid', activation = "relu", subsample = (1, 1)))
+    model.add(Convolution2D(64, 3, 3, border_mode='valid', activation = "relu", subsample = (1, 1)))
+    model.add(Flatten())
+    model.add(Dense(1164))
+    model.add(Dense(100))
+    model.add(Dense(50))
+    model.add(Dense(10))
+    model.add(Dense(1))
+    return model
+
 
 # Train model with the feature and label arrays.
+model = nvidia_cnn()
 model.compile(loss='mse', optimizer='adam')
 
-model.fit_generator(
+
+history_object = model.fit_generator(
     train_generator, 
     samples_per_epoch = len(train_samples) * 6, 
     validation_data   = validation_generator,
     nb_val_samples    = len(validation_samples) * 6, 
-    nb_epoch          = 5)
+    nb_epoch          = 5,
+    verbose = 1)
+
+
+# Print the keys contained in the history object
+print(history_object.history.keys())
+
+
+# Plot the training and validation loss for each epoch
+plt.plot(history_object.history['loss'])
+plt.plot(history_object.history['val_loss'])
+plt.title('Model mean squared error loss')
+plt.ylabel('mean squared error loss')
+plt.xlabel('epoch')
+plt.legend(['training set', 'validation set'], loc='upper right')
+plt.show()
 
 
 # Save the train model
