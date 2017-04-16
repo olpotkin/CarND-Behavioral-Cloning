@@ -35,6 +35,9 @@ print('Validation records (no augmentation): {0}'.format(len(validation_samples)
 import cv2
 import numpy as np
 import sklearn
+import matplotlib
+# Force matplotlib to not use any Xwindows backend (for AWS)
+matplotlib.use('agg')
 import matplotlib.pyplot as plt
 #%matplotlib inline
 
@@ -163,6 +166,7 @@ from keras.models import Sequential, Model
 from keras.layers import Flatten, Dense, Lambda, Dropout, Cropping2D
 from keras.layers.convolutional import Convolution2D
 from keras.layers.pooling import MaxPooling2D
+from keras.callbacks import TensorBoard
 
 # Compile and train the model using the generator function
 train_generator = generator(train_samples, batch_size = 32)
@@ -182,6 +186,7 @@ def nvidia_cnn():
     model.add(Convolution2D(48, 5, 5, border_mode='valid', activation = "relu", subsample = (2, 2)))
     model.add(Convolution2D(64, 3, 3, border_mode='valid', activation = "relu", subsample = (1, 1)))
     model.add(Convolution2D(64, 3, 3, border_mode='valid', activation = "relu", subsample = (1, 1)))
+    model.add(Dropout(0.5))
     model.add(Flatten())
     model.add(Dense(1164))
     model.add(Dense(100))
@@ -193,21 +198,26 @@ def nvidia_cnn():
 
 # Train model with the feature and label arrays.
 model = nvidia_cnn()
+model.summary()
 model.compile(loss='mse', optimizer='adam')
 
+# Callback to tensorboard to write logs
+# Visualize model and its performance using tensorboard:
+# --logdir = model_logs
+# --write_graph = True (to visualize  the model)
+tensorboard = TensorBoard(log_dir = "model_logs", write_graph = True, write_images = True)
 
 history_object = model.fit_generator(
     train_generator, 
     samples_per_epoch = len(train_samples) * 6, 
     validation_data   = validation_generator,
     nb_val_samples    = len(validation_samples) * 6, 
-    nb_epoch          = 5,
-    verbose = 1)
-
+    nb_epoch          = 12,
+    verbose 		  = 1,
+    callbacks		  = [tensorboard])
 
 # Print the keys contained in the history object
 print(history_object.history.keys())
-
 
 # Plot the training and validation loss for each epoch
 plt.plot(history_object.history['loss'])
@@ -216,8 +226,7 @@ plt.title('Model mean squared error loss')
 plt.ylabel('mean squared error loss')
 plt.xlabel('epoch')
 plt.legend(['training set', 'validation set'], loc='upper right')
-plt.show()
-
+plt.savefig('loss_graph.png', bbox_inches='tight')
 
 # Save the train model
 model.save('model.h5')
