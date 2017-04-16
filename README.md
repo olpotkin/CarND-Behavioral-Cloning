@@ -98,7 +98,7 @@ At the end of the process, the vehicle is able to drive autonomously around the 
 
 ---
 
-HERE IS THE [LINK ON YOUTUBE](https://www.youtube.com/watch?v=7-_1MnMiw1U) with example of driving in autonomous mode on the **TRACK ONE**.
+HERE IS THE LINK TO **[YOUTUBE](https://www.youtube.com/watch?v=7-_1MnMiw1U)** VIDEO with example of driving in autonomous mode on the **TRACK ONE**.
 
 
 #### 2. Final Model Architecture
